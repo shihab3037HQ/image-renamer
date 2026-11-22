@@ -36,6 +36,22 @@ After the check the user picks the download, and can use more than one without c
 
 No build step: GitHub Pages publishes the `main` branch as it is.
 
+## Test version (`beta/`)
+
+`beta/` holds the next version of the tool, for the owner to try with real folders before visitors see it.
+Once it is on `main` it is at images.hexaecom.com/beta/: not linked, search engines are told to skip it, and
+it does not count visits. It has its own `index.html`, `renamer.js` and `site.css`, and shares every other
+file with the live page (`../assets/…`). When the owner approves it: copy those three files over `index.html`,
+`assets/js/renamer.js` and `assets/css/site.css` (paths back to `assets/…`, the analytics script and the
+`robots` line restored, the test banner removed, `?v=` bumped), then delete `beta/`.
+
+What the test version changes: a colour's folder is found by its name anywhere in the drop; the photos may sit
+in a folder inside the colour folder (for example one finished ASIN); a Style column is optional and only
+chooses between two folders with the same colour (without it, the main folder's name is the style); sizes are
+read however they are written (S or Small, 3X or 3XL or XXXL); photos with no Amazon code are left out;
+folders that are not in the list are counted, not reported as problems; and a Style column that counts up
+row by row (an Excel drag-fill) gets a one-tap fix.
+
 ## When you change the page
 
 - **Examples use made-up names only** (Style 1, Style 2, White, B0EXAMP001). Never put a real style code,
