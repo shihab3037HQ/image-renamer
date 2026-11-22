@@ -20,7 +20,6 @@
   const STANDARD = ['MAIN', 'PT01', 'PT02', 'PT03', 'PT04', 'PT05', 'PT06', 'PT07', 'PT08', 'SWCH'];
   const JUNK = /^(\.|__macosx$)|^(thumbs\.db|desktop\.ini)$/i;
   const ZIP_MAX_BYTES = 950 * 1000 * 1000, ZIP_MAX_FILES = 1000;
-  const SIZE_ORDER = ['XXXS', '3XS', 'XXS', '2XS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', '5XL'];
   const HEAD_WORD = /\b(asins?|upc|ean|isbn|gtin|jan|sku|colou?rs?|sizes?|styles?|parent|folder|variation|model|product)\b/;
 
   const S = {
@@ -29,6 +28,7 @@
     files: [], junk: 0, other: 0,
     opts: { swch: true, jpeg: false, quality: 92, resize: false, maxpx: 3000 },
     pack: 'zip',               // the download: 'zip' one ZIP · 'styles' one ZIP per style · 'folders' folders to check
+    fill: null, oneStyle: false,   // a Style column that counts up (Excel drag-fill), and the one-tap fix
     plan: null, busy: false,
   };
 
@@ -53,7 +53,7 @@
   }
   function parseList(text) {
     const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n').filter(l => l.trim());
-    if (!lines.length) return { rows: [], note: '' };
+    if (!lines.length) return { rows: [], note: '', fill: null };
     const first = lines[0];
     const sep = first.includes('\t') ? '\t' : first.includes(',') ? ',' : first.includes(';') ? ';' : '\t';
     const cells = l => splitLine(l, sep).map(x => x.trim());
@@ -97,13 +97,32 @@
       if (!id && !at(ci)) return;
       rows.push({ line: i + (hasHead ? 2 : 1), style: at(ti) || at(fi), colour: at(ci), size: at(si), folder: at(fi), id: cleanId(id) });
     });
+    const fill = fillDown(rows);
+    if (fill && S.oneStyle) { rows.forEach(r => { if (r.style) r.style = fill.first; }); fill.fixed = true; }
     const styles = [...new Set(rows.map(r => r.style).filter(Boolean))];
     let note = '';
     if (rows.length) {
       note = `${many(rows.length, 'product', 'products')} in your list`;
       if (styles.length) note += ` · ${many(styles.length, 'style', 'styles')}: ${styles.slice(0, 4).join(', ')}${styles.length > 4 ? ` and ${n(styles.length - 4)} more` : ''}`;
     }
-    return { rows, note };
+    return { rows, note, fill };
+  }
+  // "AB101, AB102, AB103…" down the Style column is what Excel does when one cell is dragged down
+  function fillDown(rows) {
+    const part = s => String(s || '').match(/^(.*?)(\d+)$/);
+    const styles = [...new Set(rows.map(r => r.style).filter(Boolean))];
+    if (styles.length < 3 || styles.some(s => !part(s)) || new Set(styles.map(s => part(s)[1])).size !== 1) return null;
+    const nums = styles.map(s => +part(s)[2]).sort((a, b) => a - b);
+    if (nums[nums.length - 1] - nums[0] !== nums.length - 1) return null;       // an unbroken run of numbers
+    let steps = 0, up = 0;
+    for (let i = 1; i < rows.length; i++) {
+      if (!rows[i].style || !rows[i - 1].style) continue;
+      const a = +part(rows[i - 1].style)[2], b = +part(rows[i].style)[2];
+      steps++; if (b === a + 1 || b === nums[0]) up++;                           // one more on every row, or starting again
+    }
+    if (!steps || up / steps < 0.9) return null;
+    const at = k => styles.find(s => +part(s)[2] === k);
+    return { first: at(nums[0]), last: at(nums[nums.length - 1]), count: styles.length, fixed: false };
   }
 
   // ------------------------------------------------------------------ the photo folder
@@ -139,62 +158,122 @@
     return m;
   }
 
-  // Finding each product's photos. Names match without caring about capitals, spaces, dashes or underscores.
+  // ------------------------------------------------------------------ finding each product's photos
+  // The colour's name finds the folder. Capitals, spaces, dashes and underscores don't matter, the photos may
+  // sit in a folder inside the colour folder (for example one finished ASIN), and a style name is only needed
+  // to choose between two folders with the same colour.
   const norm = s => String(s || '').toLowerCase().replace(/[_\-\s]+/g, ' ').trim();
   const squash = s => norm(s).replace(/[^\p{L}\p{N}]+/gu, '');
-  const hasWord = (seg, word) => (' ' + seg + ' ').includes(' ' + word + ' ');
-  function folderIndex(map) {
-    return [...map.keys()].map(dir => {
-      let segs = dir.split('/').map(norm);
-      if (segs.length > 1 && segs[segs.length - 1] === 'images') segs = segs.slice(0, -1);
-      return { dir, segs, last: segs[segs.length - 1] || '' };
-    });
+  const wordsOf = s => norm(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ');
+  const hasWords = (name, want) => { const w = wordsOf(want); return !!w && (' ' + wordsOf(name) + ' ').includes(' ' + w + ' '); };
+  const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+  function near(a, b) {                                   // one or two letters apart: for "did you mean"
+    a = squash(a); b = squash(b);
+    if (Math.min(a.length, b.length) < 5 || Math.abs(a.length - b.length) > 2) return false;
+    let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const next = [i];
+      for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      row = next;
+    }
+    return row[b.length] <= 2;
   }
-  const tail = (idx, want) => idx.filter(d => d.segs.length >= want.length && want.every((w, i) => d.segs[d.segs.length - want.length + i] === w));
-  function findPhotos(p, idx, stylesOf) {
-    const colour = norm(p.colour), style = norm(p.style);
-    const one = (hits, label) => hits.length === 1 ? { dir: hits[0].dir }
-      : { error: `${hits.length} photo folders match “${label}”: ${hits.slice(0, 3).map(h => h.dir).join(', ')}${hits.length > 3 ? '…' : ''}. Keep one of them, or add a Folder column with the exact folder` };
-    if (p.folder) {                                       // the Folder column says exactly where the photos are
-      const key = p.folder + (p.colour ? '/' + p.colour : '');
-      const hits = tail(idx, key.split(/[\/\\]/).map(norm).filter(Boolean));
-      return hits.length ? one(hits, key) : { error: `No photo folder named “${key}”` };
+
+  // Sizes however they are written: S = Small, XL = X-Large = 1XL, 3X = 3XL = XXXL
+  function sizeInfo(s) {
+    let t = String(s || '').toLowerCase().replace(/[\s._\-\/]+/g, '');
+    t = t.replace(/^extra/, 'x').replace(/small$/, 's').replace(/(medium|med)$/, 'm').replace(/(large|lrg|lg)$/, 'l');
+    if (t === 's' || t === 'sm') return { key: 's', rank: 40 };
+    if (t === 'm' || t === 'md') return { key: 'm', rank: 50 };
+    if (t === 'l') return { key: 'l', rank: 60 };
+    const m = t.match(/^(\d)?(x+)(s|l)?$/);
+    if (!m || (m[1] && m[2].length > 1) || (!m[1] && !m[3])) return null;   // "2xx" and a bare "x" are not sizes
+    const n = m[1] ? +m[1] : m[2].length;
+    if (!n) return null;
+    return m[3] === 's' ? { key: n + 'xs', rank: 40 - n * 10 } : { key: n + 'xl', rank: 60 + n * 10 + (m[3] ? 0 : 1) };   // 3X sorts just after 3XL
+  }
+  const sizeSame = (a, b) => { if (norm(a) === norm(b)) return 2; const x = sizeInfo(a), y = sizeInfo(b); return x && y && x.key === y.key ? 1 : 0; };
+  function bySize(a, b) {                                 // S, M, L, XL, XXL, 3X…; other sizes keep the list's order
+    const x = sizeInfo(a.size), y = sizeInfo(b.size);
+    return x && y ? x.rank - y.rank : x ? -1 : y ? 1 : 0;
+  }
+
+  // Every folder in the drop: its own photos, and the photo folders anywhere inside it
+  function folderTree() {
+    const nodes = new Map();
+    const get = path => {
+      if (nodes.has(path)) return nodes.get(path);
+      const cut = path.lastIndexOf('/');
+      const node = { path, name: path.slice(cut + 1), up: cut < 0 ? null : get(path.slice(0, cut)), own: [], sets: [] };
+      nodes.set(path, node);
+      return node;
+    };
+    S.files.forEach(f => get(f.dir).own.push(f));
+    nodes.forEach(n => { if (n.own.length) for (let p = n; p; p = p.up) p.sets.push(n); });
+    return nodes;
+  }
+  const namesOf = n => { const out = []; for (let p = n; p; p = p.up) out.unshift(p.name); return out; };
+  const isInside = (n, top) => { for (let p = n.up; p; p = p.up) if (p === top) return true; return false; };
+
+  function foldersNamed(name, nodes) {                    // the folders that carry a name and hold photos: best matches only
+    const want = norm(name), sq = squash(name), exact = [], loose = [];
+    nodes.forEach(n => {
+      if (!n.sets.length || !n.name) return;
+      if (norm(n.name) === want || (sq && squash(n.name) === sq)) exact.push(n);
+      else if (hasWords(n.name, name)) loose.push(n);     // "Black final", "Style 1 Black"
+    });
+    let hits = exact.length ? exact : loose;
+    hits = hits.filter(n => !hits.some(o => isInside(n, o)));   // "Black/Black": the outer one
+    return { hits, loose: !exact.length && hits.length > 0 };
+  }
+  function photosIn(node, p) {                            // the photo folder a product gets from its colour folder
+    if (node.own.length) return { set: node };
+    const sets = node.sets, depth = namesOf(node).length, below = s => namesOf(s).slice(depth);
+    if (sets.length === 1) return { set: sets[0] };
+    let hit = sets.filter(s => below(s).some(seg => cleanId(seg) === p.id));          // this product's own folder
+    if (hit.length === 1) return { set: hit[0] };
+    for (const level of p.size ? [2, 1] : []) {                                       // a folder for its size
+      hit = sets.filter(s => below(s).some(seg => sizeSame(seg, p.size) >= level));
+      if (hit.length === 1) return { set: hit[0] };
     }
-    if (!colour && !style) return { error: 'No colour or style name to find the photos with' };
-    if (!style) {
-      const hits = tail(idx, [colour]);
-      if (!hits.length) return { error: `No photo folder named “${p.colour}”` };
-      if (hits.length > 1) return { error: `${hits.length} folders are named “${p.colour}”. Add a Style column to your list with the name of the folder each one is in, for example “${hits[0].dir.split('/').slice(-2, -1)[0] || 'Style 1'}”` };
-      return { dir: hits[0].dir };
+    // several finished sets: the fullest one is the pattern for every product without its own
+    return { set: sets.slice().sort((a, b) => b.own.length - a.own.length || natural(a.path, b.path))[0], among: sets.length };
+  }
+  function findPhotos(p, nodes, ctx) {
+    const key = p.colour || p.style;
+    if (!key) return ctx.sets.length === 1 ? { set: ctx.sets[0], folder: ctx.sets[0], only: true } : { none: true };
+    const name = key.split(/[\/\\]/).filter(Boolean).pop() || key;
+    let { hits, loose } = foldersNamed(name, nodes);
+    const by = p.folder || (p.colour ? p.style : key !== name ? key : '');
+    if (hits.length > 1 && by) {                          // two folders with this colour: the style says which
+      const want = by.split(/[\/\\]/).map(norm).filter(Boolean);
+      const run = n => { const ns = namesOf(n).map(norm); return ns.some((_, i) => want.every((w, j) => ns[i + j] === w)); };
+      let keep = hits.filter(run);
+      if (!keep.length) keep = hits.filter(n => namesOf(n).some(seg => hasWords(seg, by)));
+      if (keep.length) hits = keep;
     }
-    const label = p.colour ? `${p.style} / ${p.colour}` : p.style;
-    if (!colour) {                                        // a style with no colours: the style folder holds the photos
-      let hits = tail(idx, [style]);
-      if (!hits.length) hits = idx.filter(d => hasWord(d.last, style));
-      return hits.length ? one(hits, label) : { error: `No photo folder named “${p.style}”` };
-    }
-    let hits = tail(idx, [style, colour]);                // Style 1/Black
-    if (!hits.length) hits = idx.filter(d => d.last === colour && d.segs.slice(0, -1).some(s => hasWord(s, style)));   // Style 1 T-shirt/Photos/Black
-    if (!hits.length) {                                   // one folder for both: "Style 1 Black", "Black-Style 1"
-      const a = squash(p.style) + squash(p.colour), b = squash(p.colour) + squash(p.style);
-      hits = idx.filter(d => { const q = squash(d.last); return q === a || q === b; });
-    }
-    if (!hits.length && stylesOf.get(colour).size === 1) hits = tail(idx, [colour]);   // no style folder, and only one style has this colour
-    return hits.length ? one(hits, label) : { error: `No photo folder for “${label}”. Put a “${p.colour}” folder inside a “${p.style}” folder` };
+    if (hits.length === 1) return Object.assign(photosIn(hits[0], p), { folder: hits[0], loose });
+    if (hits.length > 1) return { many: hits };
+    if (ctx.sets.length === 1 && ctx.keys.size === 1) return { set: ctx.sets[0], folder: ctx.sets[0], only: true };   // one photo folder, one colour
+    return { none: true };
   }
 
   // ------------------------------------------------------------------ names and codes
   function codeOf(name) {
     const dot = name.lastIndexOf('.');
-    const base = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot).toLowerCase() : '';
-    const parts = base.split('.');
-    let code = parts.length > 1 ? parts[parts.length - 1] : parts[0];
-    code = code.trim().toUpperCase().replace(/\s+/g, '');
-    let m;
-    if (/^MAIN$/.test(code)) code = 'MAIN';
-    else if ((m = code.match(/^PT0?(\d{1,2})$/))) code = 'PT' + String(+m[1]).padStart(2, '0');
-    else if (/^(SWCH|SWATCH)$/.test(code)) code = 'SWCH';
-    else if (parts.length === 1) code = '';               // "IMG_1234.jpg": no code in the name
+    let base = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot).toLowerCase() : '';
+    base = base.replace(/\s*\(\d+\)$/, '').replace(/[\s_-]*copy(\s*\d+)?$/i, '').trim();    // "MAIN (1)", "MAIN copy"
+    const std = t => {
+      t = t.toUpperCase().replace(/\s+/g, ''); let m;
+      if (t === 'MAIN') return 'MAIN';
+      if ((m = t.match(/^PT0?(\d{1,2})$/))) return 'PT' + String(+m[1]).padStart(2, '0');
+      return t === 'SWCH' || t === 'SWATCH' ? 'SWCH' : '';
+    };
+    const parts = base.split('.'), last = parts[parts.length - 1];
+    let code = std(last), m;
+    if (!code && (m = base.match(/(?:^|[._\-\s])([A-Za-z]+\s?\d{0,2})$/))) code = std(m[1]);    // "ASIN_MAIN", "photo-PT01", "pt 1"
+    if (!code && parts.length > 1) code = last.trim().toUpperCase().replace(/\s+/g, '');       // another code after a dot: kept, and the check says so
     return { code, ext: ext === '.jpeg' ? '.jpg' : ext };
   }
   function outExt(f) {
@@ -204,17 +283,32 @@
 
   // ------------------------------------------------------------------ the check
   function buildPlan() {
-    const map = dirs(), idx = folderIndex(map), errors = [], warns = [], infos = [], oks = [], items = [];
-    const products = [], stylesOf = new Map();
+    const map = dirs(), errors = [], warns = [], infos = [], oks = [], items = [];
+    const nodes = folderTree(), sets = [...nodes.values()].filter(n => n.own.length);
+    const products = [], missing = new Map(), doubt = new Map(), notes = new Map();
     if (S.mode === 'list') {
       const seen = new Map();
-      S.rows.forEach(r => { const k = norm(r.colour); if (!stylesOf.has(k)) stylesOf.set(k, new Set()); stylesOf.get(k).add(norm(r.style)); });
+      const ctx = { sets, keys: new Set(S.rows.map(r => norm(r.colour || r.style)).filter(Boolean)) };
       S.rows.forEach(r => {
-        const p = { style: r.style, colour: r.colour, size: r.size, id: r.id, folder: r.folder, line: r.line, problems: [] };
+        const p = { style: r.style, listStyle: r.style, colour: r.colour, size: r.size, id: r.id, folder: r.folder, line: r.line, problems: [] };
         const bad = idProblem(r.id);
         if (bad) p.problems.push(bad);
         if (seen.has(r.id) && r.id) p.problems.push(`Same ASIN as line ${seen.get(r.id)}`); else seen.set(r.id, r.line);
         products.push(p);
+        if (p.problems.length) return;
+        const f = findPhotos(p, nodes, ctx), label = p.colour || p.style || '(no colour)';
+        if (!f.set) {                                     // gathered by colour, so the check says it once
+          const m = f.many ? doubt : missing;
+          if (!m.has(label)) m.set(label, { count: 0, hits: f.many });
+          m.get(label).count++;
+          p.unmatched = f.many ? `${f.many.length} folders are named “${label}”` : `No photo folder named “${label}”`;
+          return;
+        }
+        p.dir = f.set.path;
+        if (!p.style && f.folder.up && f.folder.up.name) p.style = f.folder.up.name;      // no Style column: the main folder's name
+        if (f.among) notes.set('among ' + f.folder.path, `“${f.folder.name}” has ${f.among} photo folders inside. Products without a folder of their own use “${f.set.name}”.`);
+        if (f.loose) notes.set('loose ' + f.folder.path, `“${label}” uses the folder “${f.folder.name}”.`);
+        if (f.only && label !== '(no colour)') notes.set('only', `No folder is named “${label}”. The only photo folder, “${f.set.name || f.set.path}”, is used.`);
       });
     } else {
       const found = [];
@@ -238,20 +332,21 @@
       });
       if (!products.length && S.files.length) errors.push('No folder is named with an ASIN. Name each product folder with its ASIN, or use “My list”.');
     }
-    const codeWarn = new Set(), noCode = new Set(), dupCode = [];
+    const codeWarn = new Set(), noCode = new Set(), dupCode = [], skipped = new Set(), bare = new Set();
     products.forEach(p => {
-      if (!p.dir && !p.problems.length) {
-        const f = findPhotos(p, idx, stylesOf);
-        if (f.error) p.problems.push(f.error); else p.dir = f.dir;
-      }
+      if (p.unmatched) { p.problems.push(p.unmatched); p.files = []; return; }
       if (p.problems.length) { errors.push(...p.problems.map(x => (p.line ? `Line ${p.line}: ` : '') + x)); p.files = []; return; }
       const src = (map.get(p.dir) || []).slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
       if (!src.length) { errors.push(`Line ${p.line}: the folder “${p.dir}” has no photos`); p.files = []; return; }
       const used = new Map();
       p.files = [];
-      src.forEach(f => {
+      const usable = src.filter(f => !NO_DECODE.test(f.name));   // HEIC: Amazon doesn't accept it (warned below)
+      const coded = usable.filter(f => codeOf(f.name).code);
+      // "Listing Design.jpg" next to MAIN and PT01: left out, not renamed (Amazon reads a name without a code as MAIN)
+      if (coded.length) usable.forEach(f => { if (!coded.includes(f)) skipped.add(p.dir + '/' + f.name); });
+      else if (usable.length > 1) { bare.add(p.dir); p.problems.push('The photos have no Amazon code in their names'); return; }
+      (coded.length ? coded : usable).forEach(f => {
         const { code } = codeOf(f.name);
-        if (NO_DECODE.test(f.name)) return;             // HEIC: Amazon doesn't accept it (warned below)
         const out = `${p.id}${code ? '.' + code : ''}${outExt(f)}`;
         if (used.has(out)) { dupCode.push(`${p.dir}: ${used.get(out)} and ${f.name} both become ${out}`); return; }
         used.set(out, f.name);
@@ -267,19 +362,39 @@
     });
     const ok = products.filter(p => p.files && p.files.length);
     if (S.mode === 'list') {
+      // A colour without photos is said once, with the folder names that are there
+      const seen = [...new Set([...nodes.values()].filter(f => f.sets.length && f.up).map(f => f.name))].sort(natural);
+      missing.forEach((v, label) => {
+        const close = seen.find(name => near(name, label));
+        errors.push(`No folder is named “${label}” (${many(v.count, 'product', 'products')}).` +
+          (close ? ` Did you mean “${close}”? Use the same name in your list and on the folder.`
+            : seen.length ? ` Folders in your drop: ${seen.slice(0, 6).join(', ')}${seen.length > 6 ? ` and ${n(seen.length - 6)} more` : ''}.` : ''));
+      });
+      doubt.forEach((v, label) => errors.push(`${v.hits.length} folders are named “${label}” (${many(v.count, 'product', 'products')}): ${v.hits.slice(0, 3).map(f => f.path).join(', ')}${v.hits.length > 3 ? '…' : ''}. ` +
+        `Add a Style column to your list with the name of the folder each one is in, for example “${(v.hits[0].up && v.hits[0].up.name) || 'Style 1'}”.`));
       // Two styles with the same colour: say that each one has its own photos, or warn when they share a folder
-      const users = new Map(), byColour = new Map();
+      const users = new Map(), byColour = new Map(), mixed = new Set();
       ok.forEach(p => {
-        const who = [p.style, p.colour].filter(Boolean).join(' / ');
-        if (!users.has(p.dir)) users.set(p.dir, new Set());
-        users.get(p.dir).add(who);
+        if (!users.has(p.dir)) users.set(p.dir, { colour: p.colour, styles: new Set() });
+        if (p.listStyle) users.get(p.dir).styles.add(p.listStyle);
         if (p.style && p.colour) { const k = norm(p.colour); if (!byColour.has(k)) byColour.set(k, { name: p.colour, styles: new Set() }); byColour.get(k).styles.add(p.style); }
       });
-      const mixed = new Set();
-      users.forEach((who, dir) => { if (who.size > 1) { [...who].forEach(w => mixed.add(w)); warns.push(`${[...who].map(w => `“${w}”`).join(' and ')} use the same photo folder, “${dir}”. Check that this is right.`); } });
-      const shared = [...byColour.values()].filter(c => c.styles.size > 1 && ![...c.styles].some(s => mixed.has(s + ' / ' + c.name)));
+      const counting = S.fill && !S.fill.fixed;           // "AB101, AB102, AB103": said once, below
+      users.forEach((u, dir) => {
+        if (u.styles.size < 2) return;
+        mixed.add(norm(u.colour));
+        if (!counting) warns.push(`${u.styles.size} styles (${[...u.styles].slice(0, 4).join(', ')}${u.styles.size > 4 ? '…' : ''}) use the same photo folder${u.colour ? ` for “${u.colour}”` : ''}: “${dir}”. Check that this is right.`);
+      });
+      if (counting) warns.push(`The Style column counts up row by row (${S.fill.first} to ${S.fill.last}). Excel does this when a cell is dragged down. If it is one style, press “Use ${S.fill.first} for every row” under your list, then check again.`);
+      const shared = [...byColour.values()].filter(c => c.styles.size > 1 && !mixed.has(norm(c.name)));
       if (shared.length) oks.push(`${shared.slice(0, 3).map(c => `${c.name} is in ${c.styles.size} styles (${[...c.styles].slice(0, 4).join(', ')}${c.styles.size > 4 ? '…' : ''})`).join('. ')}${shared.length > 3 ? `, and ${n(shared.length - 3)} more shared colours` : ''}. Each style uses its own photo folder.`);
+      // Folders that were not needed are fine: say how many, and which
+      const usedDirs = new Set(ok.map(p => p.dir)), spare = sets.filter(f => !usedDirs.has(f.path)).sort((a, b) => natural(a.path, b.path));
+      if (ok.length && spare.length) infos.push(`${many(usedDirs.size, 'photo folder', 'photo folders')} used, ${n(spare.length)} not used: ${spare.slice(0, 5).map(f => spare.filter(o => o.name === f.name).length > 1 ? f.path.split('/').slice(-2).join('/') : f.name || f.path).join(', ')}${spare.length > 5 ? ` and ${n(spare.length - 5)} more` : ''}. They are not in your list.`);
+      notes.forEach(m => infos.push(m));
     }
+    bare.forEach(d => errors.push(`The photos in “${d}” have no Amazon code in their names (MAIN, PT01, PT02…). Name them like photo.MAIN.jpg and photo.PT01.jpg.`));
+    if (skipped.size) infos.push(`${many(skipped.size, 'photo was', 'photos were')} left out because the name has no Amazon code (MAIN, PT01…): ${[...skipped].sort(natural).slice(0, 3).map(x => x.split('/').slice(-2).join('/')).join(', ')}${skipped.size > 3 ? ` and ${n(skipped.size - 3)} more` : ''}.`);
     [...new Set(dupCode)].forEach(x => errors.push('Two photos get the same name: ' + x));
     if (codeWarn.size) warns.push(`${[...codeWarn].join(', ')} ${codeWarn.size === 1 ? 'is not one of' : 'are not'} Amazon's standard codes (MAIN, PT01 to PT08, SWCH). Check that Amazon accepts ${codeWarn.size === 1 ? 'it' : 'them'} for your category.`);
     if (noCode.size) warns.push(`${many(noCode.size, 'photo has', 'photos have')} no image code in the name (for example ${[...noCode][0]}). Amazon reads a name without a code as the MAIN image.`);
@@ -413,9 +528,14 @@
 
   function renderList() {
     const parsed = parseList($('#list').value);
-    S.rows = parsed.rows; S.listNote = parsed.note;
+    S.rows = parsed.rows; S.listNote = parsed.note; S.fill = parsed.fill;
     $('#listNote').textContent = parsed.note || 'Paste your list, or upload a file.';
     $('#listNote').className = 'found' + (parsed.rows.length ? ' ok' : '');
+    const hint = $('#listHint'), f = parsed.fill;
+    hint.hidden = !f;
+    if (f) hint.innerHTML = f.fixed
+      ? `Style is “${esc(f.first)}” on every row now. <button type="button" class="link" data-fill="undo">Undo</button>`
+      : `Your Style column counts up row by row (${esc(f.first)} to ${esc(f.last)}). Excel does this when you drag a cell down. Is it one style? <button type="button" class="link" data-fill="fix">Use “${esc(f.first)}” for every row</button>`;
     S.plan = null; refresh();
   }
   function renderFolder() {
@@ -471,7 +591,7 @@
     const styles = new Set(plan.ok.map(p => p.style).filter(Boolean)).size;
     $('#sum').innerHTML =
       `<span class="ok"><b>${n(plan.ok.length)}</b> ${plan.ok.length === 1 ? 'product' : 'products'} ready</span>` +
-      (styles ? `<span><b>${n(styles)}</b> ${list ? (styles === 1 ? 'style' : 'styles') : (styles === 1 ? 'main folder' : 'main folders')}</span>` : '') +
+      (styles > 1 || (styles && plan.ok.some(p => p.listStyle || !list)) ? `<span><b>${n(styles)}</b> ${list ? (styles === 1 ? 'style' : 'styles') : (styles === 1 ? 'main folder' : 'main folders')}</span>` : '') +
       `<span><b>${n(plan.items.length)}</b> photos to create</span>` +
       `<span class="${errors ? 'err' : 'ok'}"><b>${n(errors)}</b> ${errors === 1 ? 'problem' : 'problems'}</span>` +
       `<span class="${warns ? 'warn' : ''}"><b>${n(warns)}</b> ${warns === 1 ? 'warning' : 'warnings'}</span>`;
@@ -489,14 +609,13 @@
       if (!byStyle.get(s).has(k)) byStyle.get(s).set(k, []);
       byStyle.get(s).get(k).push(p);
     });
-    const order = s => { const i = SIZE_ORDER.indexOf(String(s).toUpperCase()); return i < 0 ? 99 : i; };
     const photos = ps => ps.reduce((s, p) => s + p.files.length, 0);
     let shown = 0;
     $('#names').innerHTML = [...byStyle].map(([style, groups]) => {
       const all = [...groups.values()].flat(), colours = new Set(all.map(p => p.colour).filter(Boolean)).size;
       const head = styles ? `<div class="style-head"><b>${esc(style || (list ? 'No style' : 'Other'))}</b><small>${colours ? many(colours, 'colour', 'colours') + ' · ' : ''}${many(all.length, 'product', 'products')} · ${many(photos(all), 'photo', 'photos')}</small></div>` : '';
       return `<div class="style-group">${head}` + [...groups].map(([k, ps]) => {
-        ps.sort((a, b) => order(a.size) - order(b.size));
+        ps.sort(bySize);
         const label = list ? k : ps[0].rel.slice(1).concat(ps[0].dir.split('/').pop()).join(' / ');
         const from = [...new Set(ps.map(p => p.dir))];
         return `<details${shown++ < 1 ? ' open' : ''}><summary><b>${esc(label)}</b> <small>${many(ps.length, 'product', 'products')} · ${many(photos(ps), 'photo', 'photos')}</small></summary>` +
@@ -655,6 +774,12 @@
     root.dataset.mode = S.mode; S.plan = null; refresh();
   }));
   $('#list').addEventListener('input', () => { clearTimeout(renderList.t); renderList.t = setTimeout(renderList, 250); });
+  $('#listHint').addEventListener('click', e => {
+    const b = e.target.closest('[data-fill]'); if (!b) return;
+    S.oneStyle = b.dataset.fill === 'fix';
+    renderList();
+    if (S.files.length) ui.status.textContent = 'List changed: check again.';
+  });
   $('#listFile').addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
     try {

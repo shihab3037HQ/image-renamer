@@ -20,9 +20,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Geist+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="assets/css/base.css?v=20261122b">
-<link rel="stylesheet" href="assets/css/site.css?v=20261122b">
-<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebApplication","name":"Amazon Bulk Image Renamer","url":"https://images.hexaecom.com/","applicationCategory":"BusinessApplication","operatingSystem":"Any","browserRequirements":"Requires JavaScript","description":"Free tool that names product photos for every ASIN (ASIN.MAIN.jpg, ASIN.PT01.jpg, ASIN.SWCH.jpg) and packs them into ZIP files for Amazon's bulk image upload.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@type":"Organization","name":"HexaEcom","url":"https://hexaecom.com/"}},{"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Are my photos uploaded anywhere?","acceptedAnswer":{"@type":"Answer","text":"No. The tool runs in your browser. Your photos are read on your computer and never uploaded, and your original files are never changed."}},{"@type":"Question","name":"How should I name my photos?","acceptedAnswer":{"@type":"Answer","text":"Any word, a dot, then the Amazon code, for example photo.MAIN.jpg, photo.PT01.jpg or photo.SWCH.jpg. Files named just MAIN.jpg or PT01.jpg work too. The tool replaces the first word with each ASIN."}},{"@type":"Question","name":"Can I use an Excel file?","acceptedAnswer":{"@type":"Answer","text":"Yes. Upload an .xlsx or .csv file with Style, Colour, Size and ASIN columns, or copy the rows from Excel and paste them. Style is only needed when you have more than one."}},{"@type":"Question","name":"What if two styles have the same colour?","acceptedAnswer":{"@type":"Answer","text":"Add a Style column (a column named Parent works too) with each style's name, for example Style 1 and Style 2, and keep each style's colour folders inside a folder with that name. The check shows every style on its own, and tells you if two of them use the same photos."}},{"@type":"Question","name":"Can I look at the photos before I make the ZIP?","acceptedAnswer":{"@type":"Answer","text":"Yes. After the check, choose In folders, to check first. You get a folder for each style, colour, size and ASIN. When they look right, choose One ZIP for Amazon and download: no need to check again."}},{"@type":"Question","name":"Is there a limit?","acceptedAnswer":{"@type":"Answer","text":"No set limit. Big jobs are split into ZIP files under 1 GB and 1,000 photos each. In Chrome and Edge you can also save the photos straight into a folder."}}]}]}</script>
+<link rel="stylesheet" href="assets/css/base.css?v=20261122c">
+<link rel="stylesheet" href="assets/css/site.css?v=20261122c">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebApplication","name":"Amazon Bulk Image Renamer","url":"https://images.hexaecom.com/","applicationCategory":"BusinessApplication","operatingSystem":"Any","browserRequirements":"Requires JavaScript","description":"Free tool that names product photos for every ASIN (ASIN.MAIN.jpg, ASIN.PT01.jpg, ASIN.SWCH.jpg) and packs them into ZIP files for Amazon's bulk image upload.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@type":"Organization","name":"HexaEcom","url":"https://hexaecom.com/"}},{"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Are my photos uploaded anywhere?","acceptedAnswer":{"@type":"Answer","text":"No. The tool runs in your browser. Your photos are read on your computer and never uploaded, and your original files are never changed."}},{"@type":"Question","name":"How should I name my photos?","acceptedAnswer":{"@type":"Answer","text":"Any word, a dot, then the Amazon code, for example photo.MAIN.jpg, photo.PT01.jpg or photo.SWCH.jpg. Files named just MAIN.jpg or PT01.jpg work too. The tool replaces the first word with each ASIN."}},{"@type":"Question","name":"Do the names have to match exactly?","acceptedAnswer":{"@type":"Answer","text":"No. For colours, capitals, spaces, dashes and underscores don't matter. Sizes can be written any way: S or Small, XL or X-Large, 3X or 3XL or XXXL. The photos can be in the colour folder or in a folder inside it, and extra folders or files are left out and listed in the check."}},{"@type":"Question","name":"Can I use an Excel file?","acceptedAnswer":{"@type":"Answer","text":"Yes. Upload an .xlsx or .csv file with Colour, Size and ASIN columns, or copy the rows from Excel and paste them. A Style column is optional."}},{"@type":"Question","name":"What if two styles have the same colour?","acceptedAnswer":{"@type":"Answer","text":"Add a Style column (a column named Parent works too) with each style's name, for example Style 1 and Style 2, and keep each style's colour folders inside a folder with that name. The check shows every style on its own, and tells you if two of them use the same photos."}},{"@type":"Question","name":"Can I look at the photos before I make the ZIP?","acceptedAnswer":{"@type":"Answer","text":"Yes. After the check, choose In folders, to check first. You get a folder for each style, colour, size and ASIN. When they look right, choose One ZIP for Amazon and download: no need to check again."}},{"@type":"Question","name":"Is there a limit?","acceptedAnswer":{"@type":"Answer","text":"No set limit. Big jobs are split into ZIP files under 1 GB and 1,000 photos each. In Chrome and Edge you can also save the photos straight into a folder."}}]}]}</script>
 </head>
 <body>
 <a class="skip" href="#tool">Skip to the tool</a>
@@ -89,17 +89,18 @@
     <div class="steps3">
       <div class="card step only-list">
         <h3><i>1</i>Your product list</h3>
-        <p class="sub">Paste from Excel or your listing file: Style name (or parent name), Colour, Size and ASIN. With one style, leave Style out. A header row is fine.</p>
+        <p class="sub">Paste from Excel or your listing file: Colour, Size and ASIN. A Style (or parent) name is optional. A header row is fine.</p>
         <textarea id="list" spellcheck="false" aria-label="Your product list: style or parent name, colour, size and ASIN" placeholder="Style	Colour	Size	ASIN
 Style 1	Black	S	B0XXXXXXXX
 Style 1	Black	M	B0XXXXXXXX
 Style 2	Black	S	B0XXXXXXXX"></textarea>
         <div class="row-links"><label class="link file">Upload Excel or CSV<input type="file" id="listFile" accept=".csv,.txt,.tsv,.xlsx,.xls" hidden></label><button type="button" class="link" id="exampleCsv">Download the example file</button></div>
         <p class="found" id="listNote">Paste your list, or upload a file.</p>
+        <p class="found hint" id="listHint" hidden></p>
       </div>
       <div class="card step">
         <h3><i class="only-list">2</i><i class="only-folders">1</i>Your photo folder</h3>
-        <p class="sub only-list">One folder for each colour, with that colour's photos. With more than one style, keep each style's colour folders inside a folder with the style's name: <code>Style 1/Black</code>.</p>
+        <p class="sub only-list">Drop your main folder. Inside it, one folder for each colour, named like the colour in your list. The photos can be in the colour folder or in a folder inside it.</p>
         <p class="sub only-folders">One folder for each product, named with its ASIN.</p>
         <label class="drop" id="drop">
           <input type="file" id="folderInput" webkitdirectory directory multiple hidden>
@@ -151,9 +152,9 @@ Style 2	Black	S	B0XXXXXXXX"></textarea>
   <div class="wrap">
     <h2>How it works</h2>
     <ol class="how">
-      <li><b>Your list</b><span>Paste or upload Style, Colour, Size and ASIN for every child product. Copy them from your Amazon listing file.</span></li>
-      <li><b>Your photos</b><span>Drop one folder with a subfolder for each colour, or for each style with its colours inside. Each size gets its colour's photos.</span></li>
-      <li><b>Check</b><span>See every new file name, style by style, plus anything Amazon may reject: wrong ASINs, missing folders, small or unsupported photos.</span></li>
+      <li><b>Your list</b><span>Paste or upload Colour, Size and ASIN for every child product. Copy them from your Amazon listing file. A Style name is optional.</span></li>
+      <li><b>Your photos</b><span>Drop your main folder with a folder for each colour inside. The tool finds each colour by its name, and every size gets its colour's photos.</span></li>
+      <li><b>Check</b><span>See every new file name, which folders were used and which were not, plus anything Amazon may reject: wrong ASINs, small or unsupported photos.</span></li>
       <li><b>Download</b><span>Get one ZIP for Amazon, a ZIP for each style, or folders to look through first. A report comes with it.</span></li>
     </ol>
   </div>
@@ -163,9 +164,10 @@ Style 2	Black	S	B0XXXXXXXX"></textarea>
   <div class="wrap two">
     <div>
       <h2>How to set up your photo folder</h2>
-      <p>Make one folder for each colour. Name each photo with any word, a dot, then the Amazon code. The tool swaps the first word for each ASIN. Photos named just <code>MAIN.jpg</code> or <code>PT01.jpg</code> work too.</p>
-      <p>More than one style (or parent)? Make a folder for each style, with its colour folders inside, and add a <b>Style</b> column to your list. Two styles can both have Black: each one keeps its own photos, its own group in the check and its own folder or ZIP in the download.</p>
-      <p>A single folder for a style and colour, like <code>Style 1 Black</code>, works too. Capitals, spaces, dashes and underscores in folder names don't matter.</p>
+      <p>Make one folder for each colour, with the same name as the colour in your list, and put them all in one main folder. Capitals, spaces, dashes and underscores don't matter. Extra folders are fine: the check tells you which were used.</p>
+      <p>The photos can sit in the colour folder, or in a folder inside it: for example the folder of one ASIN that is already finished. Those photos are copied to every size of that colour.</p>
+      <p>Name each photo with any word, then the Amazon code: <code>photo.MAIN.jpg</code>, <code>photo.PT01.jpg</code>. Photos named just <code>MAIN.jpg</code> or <code>PT01.jpg</code> work too. A photo without a code, like a design file, is left out.</p>
+      <p>Two styles (or parents) with the same colour? Make a folder for each style with its colour folders inside, and add a <b>Style</b> column to your list. Without a Style column, the main folder's name is used as the style name.</p>
       <p>Selling single products without colours or sizes? Choose <b>Folders named with ASINs</b> and name each product's folder with its ASIN.</p>
     </div>
     <pre class="tree" aria-label="Example photo folder with two styles"><b>My photos/</b>
@@ -215,7 +217,8 @@ B0XXXXXXXX.PT01.jpg …</pre>
     <h2>Questions</h2>
     <details><summary>Are my photos uploaded anywhere?</summary><p>No. The tool runs in your browser. Your photos are read on your computer and never uploaded, and your original files are never changed.</p></details>
     <details><summary>How should I name my photos?</summary><p>Any word, a dot, then the Amazon code, for example <code>photo.MAIN.jpg</code>, <code>photo.PT01.jpg</code> or <code>photo.SWCH.jpg</code>. Files named just <code>MAIN.jpg</code> or <code>PT01.jpg</code> work too. Other codes in your names are kept, and the check tells you if Amazon may not accept them.</p></details>
-    <details><summary>Can I use an Excel file?</summary><p>Yes. Upload an .xlsx or .csv file with Style, Colour, Size and ASIN columns, or copy the rows from Excel and paste them. Style is only needed when you have more than one. <button type="button" class="link" data-example-csv>Download the example file</button>.</p></details>
+    <details><summary>Do the names have to match exactly?</summary><p>No. For colours, capitals, spaces, dashes and underscores don't matter. Sizes can be written any way: S or Small, XL or X-Large, 3X or 3XL or XXXL. The photos can be in the colour folder or in a folder inside it, and extra folders or files are left out and listed in the check.</p></details>
+    <details><summary>Can I use an Excel file?</summary><p>Yes. Upload an .xlsx or .csv file with Colour, Size and ASIN columns, or copy the rows from Excel and paste them. A Style column is optional. <button type="button" class="link" data-example-csv>Download the example file</button>.</p></details>
     <details><summary>What if two styles have the same colour?</summary><p>Add a <b>Style</b> column (a column named Parent works too) with each style's name, for example <code>Style 1</code> and <code>Style 2</code>, and keep each style's colour folders inside a folder with that name. The check shows every style on its own, and tells you if two of them use the same photos.</p></details>
     <details><summary>Can I look at the photos before I make the ZIP?</summary><p>Yes. After the check, choose <b>In folders, to check first</b>. You get a folder for each style, colour, size and ASIN. When they look right, choose <b>One ZIP for Amazon</b> and download: no need to check again. If you changed the folders by hand, drop them back in with <b>Folders named with ASINs</b>.</p></details>
     <details><summary>Is there a limit?</summary><p>No set limit. Big jobs are split into ZIP files under 1 GB and 1,000 photos each, the safer limits for Amazon's upload. In Chrome and Edge you can also save the photos straight into a folder.</p></details>
@@ -249,9 +252,9 @@ B0XXXXXXXX.PT01.jpg …</pre>
   </div>
   <div class="bottom">© 2026 HexaEcom · Built by the HexaEcom team · Independent agency, not affiliated with Amazon or any marketplace.</div>
 </footer>
-<script src="assets/js/zip.js?v=20261122b" defer></script>
-<script src="assets/js/renamer.js?v=20261122b" defer></script>
-<script src="assets/js/site.js?v=20261122b" defer></script>
+<script src="assets/js/zip.js?v=20261122c" defer></script>
+<script src="assets/js/renamer.js?v=20261122c" defer></script>
+<script src="assets/js/site.js?v=20261122c" defer></script>
 <script src="/assets/js/feedback.js" defer></script>
 </body>
 </html>
